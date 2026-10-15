@@ -1,0 +1,345 @@
+<script type="text/javascript">
+    RED.nodes.registerType("llm-config", {
+        category: "config",
+        defaults: {
+            name: { value: "GLM-5.3-Flash" },
+            url: { value: "https://glm53-flash.dtx-colab.com/v1/chat/completions", required: true },
+            model: { value: "zai-org/GLM-5.3-Flash", required: true },
+            timeout: { value: 120000, validate: RED.validators.number() }
+        },
+        credentials: {
+            apiKey: { type: "password" }
+        },
+        label: function () {
+            return this.name || this.model;
+        }
+    });
+</script>
+
+<script type="text/html" data-template-name="llm-config">
+    <div class="form-row">
+        <label for="node-config-input-name"><i class="fa fa-tag"></i> Name</label>
+        <input type="text" id="node-config-input-name">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-url"><i class="fa fa-globe"></i> URL</label>
+        <input type="text" id="node-config-input-url" placeholder="https://host/v1/chat/completions">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-model"><i class="fa fa-cube"></i> Model</label>
+        <input type="text" id="node-config-input-model">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-apiKey"><i class="fa fa-key"></i> API key</label>
+        <input type="password" id="node-config-input-apiKey" placeholder="Bearer token">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-timeout"><i class="fa fa-clock-o"></i> Timeout (ms)</label>
+        <input type="text" id="node-config-input-timeout">
+    </div>
+</script>
+
+<script type="text/html" data-help-name="llm-config">
+    <p>Connection to an OpenAI-compatible <code>/chat/completions</code> endpoint.</p>
+    <p>The API key is stored encrypted with the other Node-RED credentials.</p>
+    <p>Deployed configurations are also listed as models in the <b>LLM Plugin</b> sidebar.</p>
+</script>
+
+<!-- ======================= Editor sidebar: LLM Plugin chat ======================= -->
+
+<style>
+    .llm-plugin { display: flex; flex-direction: column; height: 100%; color: var(--red-ui-primary-text-color); }
+    .llm-plugin-header { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--red-ui-secondary-border-color); }
+    .llm-plugin-header h3 { flex: 1; margin: 0; font-size: 15px; }
+    .llm-plugin-messages { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+    .llm-plugin-msg { max-width: 90%; padding: 8px 10px; border-radius: 10px; word-wrap: break-word; }
+    .llm-plugin-msg.user { align-self: flex-end; background: var(--red-ui-text-color-link, #0070c0); color: #fff; border-radius: 14px; white-space: pre-wrap; }
+    .llm-plugin-msg.assistant { align-self: flex-start; background: var(--red-ui-secondary-background); border: 1px solid var(--red-ui-secondary-border-color); }
+    .llm-plugin-msg.error { align-self: flex-start; color: var(--red-ui-text-color-error, #d00); }
+    .llm-plugin-msg .red-ui-markdown pre { white-space: pre-wrap; }
+    .llm-plugin-msg details pre { max-height: 240px; overflow: auto; font-size: 11px; }
+    .llm-plugin-meta { font-size: 11px; opacity: .7; margin-top: 4px; }
+    .llm-plugin-actions { display: flex; gap: 6px; margin-top: 6px; }
+    .llm-plugin-options { border-top: 1px solid var(--red-ui-secondary-border-color); padding: 6px 10px; }
+    .llm-plugin-options summary { cursor: pointer; font-weight: bold; }
+    .llm-plugin-options .form-row { display: flex; align-items: center; gap: 6px; margin: 6px 0; }
+    .llm-plugin-options label { width: 60px; margin: 0; }
+    .llm-plugin-options select { flex: 1; }
+    .llm-plugin-input { display: flex; gap: 6px; padding: 6px 10px 10px; }
+    .llm-plugin-input textarea { flex: 1; resize: vertical; min-height: 54px; margin: 0; }
+    .llm-plugin-chats { padding: 10px; display: flex; flex-direction: column; gap: 4px; }
+    .llm-plugin-chats a { display: flex; justify-content: space-between; padding: 6px; border-radius: 4px; cursor: pointer; }
+    .llm-plugin-chats a:hover { background: var(--red-ui-secondary-background-hover); }
+</style>
+
+<script type="text/javascript">
+(function () {
+    const STORAGE_KEY = "llm-plugin.chats";
+    const PREFS_KEY = "llm-plugin.prefs";
+
+    // ---- Persistence (per browser) ---------------------------------------------
+    const store = {
+        load(key, fallback) {
+            try { return JSON.parse(localStorage.getItem(key)) || fallback; } catch (_) { return fallback; }
+        },
+        save(key, value) {
+            try { localStorage.setItem(key, JSON.stringify(value)); } catch (_) { /* storage unavailable */ }
+        }
+    };
+
+    let chats = store.load(STORAGE_KEY, []);
+    let prefs = store.load(PREFS_KEY, { context: "flow", mode: "agent", modelId: "" });
+    let currentChat = null;
+    let busy = false;
+
+    // ---- Flow helpers (editor API) ---------------------------------------------
+    const flowOps = {
+        activeTabId() {
+            const id = RED.workspaces.active();
+            return RED.nodes.workspace(id) ? id : null; // null when a subflow is open
+        },
+        exportTab(tabId) {
+            const set = [];
+            RED.nodes.eachNode(n => { if (n.z === tabId) set.push(n); });
+            RED.nodes.groups(tabId).forEach(g => set.push(g));
+            RED.nodes.junctions(tabId).forEach(j => set.push(j));
+            return set.map(n => RED.nodes.convertNode(n, { credentials: false }));
+        },
+        isConfigType(type) {
+            const def = RED.nodes.getType(type);
+            return !!def && def.category === "config";
+        },
+        // Replaces the tab content with the given nodes. Undoable (Ctrl+Z) in two steps.
+        replaceTab(tabId, nodes) {
+            RED.workspaces.show(tabId);
+            RED.actions.invoke("core:select-all-nodes");
+            RED.actions.invoke("core:delete-selection");
+
+            const toImport = nodes
+                .filter(n => n && n.type && n.type !== "tab" && n.type !== "subflow")
+                .filter(n => !(flowOps.isConfigType(n.type) && RED.nodes.node(n.id))) // keep existing config nodes
+                .map(n => flowOps.isConfigType(n.type) ? n : { ...n, z: tabId });
+            if (toImport.length) {
+                RED.view.importNodes(toImport, { generateIds: false, addFlow: false, touchImport: true, notify: false });
+            }
+            RED.view.redraw(true);
+        }
+    };
+
+    // ---- API --------------------------------------------------------------------
+    const api = {
+        models() {
+            return $.getJSON("llm-plugin/models");
+        },
+        chat(body) {
+            return $.ajax({
+                url: "llm-plugin/chat",
+                method: "POST",
+                contentType: "application/json",
+                data: JSON.stringify(body)
+            });
+        }
+    };
+
+    // ---- UI -----------------------------------------------------------------------
+    const $root = $('<div class="llm-plugin"></div>');
+    const $header = $('<div class="llm-plugin-header"><h3>LLM Plugin Chat</h3></div>').appendTo($root);
+    const $newBtn = $('<button class="red-ui-button red-ui-button-small primary">New Chat</button>').appendTo($header);
+    const $chatsBtn = $('<button class="red-ui-button red-ui-button-small">Chats</button>').appendTo($header);
+    const $messages = $('<div class="llm-plugin-messages"></div>').appendTo($root);
+    const $chatList = $('<div class="llm-plugin-chats"></div>').hide().appendTo($root);
+
+    const $options = $(`<details class="llm-plugin-options" open>
+        <summary>Session Options</summary>
+        <div class="form-row"><label>Context</label>
+            <select class="llm-context"><option value="flow">Current Open Flow</option><option value="none">None</option></select></div>
+        <div class="form-row"><label>Mode</label>
+            <select class="llm-mode"><option value="agent">Agent</option><option value="ask">Ask</option></select></div>
+        <div class="form-row"><label>Model</label><select class="llm-model"></select></div>
+    </details>`).appendTo($root);
+    const $context = $options.find(".llm-context").val(prefs.context);
+    const $mode = $options.find(".llm-mode").val(prefs.mode);
+    const $model = $options.find(".llm-model");
+
+    const $inputRow = $('<div class="llm-plugin-input"></div>').appendTo($root);
+    const $input = $('<textarea placeholder="Ask something or request a flow... (Ctrl+Enter to send)"></textarea>').appendTo($inputRow);
+    const $sendBtn = $('<button class="red-ui-button primary">Send</button>').appendTo($inputRow);
+
+    function savePrefs() {
+        prefs = { context: $context.val(), mode: $mode.val(), modelId: $model.val() };
+        store.save(PREFS_KEY, prefs);
+    }
+
+    function saveChats() {
+        store.save(STORAGE_KEY, chats);
+    }
+
+    function newChat() {
+        if (currentChat && !currentChat.messages.length) return showMessages();
+        currentChat = { id: RED.nodes.id(), title: "New chat", created: Date.now(), messages: [] };
+        chats.unshift(currentChat);
+        showMessages();
+    }
+
+    function renderMessage(msg) {
+        if (msg.role === "user") {
+            return $('<div class="llm-plugin-msg user"></div>').text(msg.content);
+        }
+        if (msg.role === "error") {
+            return $('<div class="llm-plugin-msg error"></div>').text(msg.content);
+        }
+
+        const $msg = $('<div class="llm-plugin-msg assistant"></div>');
+        $('<div class="red-ui-markdown"></div>').html(RED.utils.renderMarkdown(msg.content || "")).appendTo($msg);
+
+        if (msg.nodes) {
+            const $details = $(`<details><summary>Flow JSON (${msg.nodes.length} nodes)</summary><pre></pre></details>`);
+            $details.find("pre").text(JSON.stringify(msg.nodes, null, 2));
+            $msg.append($details);
+
+            const $actions = $('<div class="llm-plugin-actions"></div>').appendTo($msg);
+            $('<button class="red-ui-button red-ui-button-small">Apply to flow</button>')
+                .on("click", () => applyFlow(msg))
+                .appendTo($actions);
+            if (msg.checkpoint) {
+                $('<button class="red-ui-button red-ui-button-small">Restore Checkpoint</button>')
+                    .on("click", () => restoreCheckpoint(msg))
+                    .appendTo($actions);
+            }
+        }
+        if (msg.meta) {
+            $('<div class="llm-plugin-meta"></div>').text(msg.meta).appendTo($msg);
+        }
+        return $msg;
+    }
+
+    function showMessages() {
+        $chatList.hide();
+        $messages.show().empty();
+        currentChat.messages.forEach(m => $messages.append(renderMessage(m)));
+        if (busy) $messages.append('<div class="llm-plugin-meta"><i class="fa fa-spinner fa-spin"></i> Thinking…</div>');
+        $messages.scrollTop($messages[0].scrollHeight);
+    }
+
+    function showChatList() {
+        $messages.hide();
+        $chatList.show().empty();
+        if (!chats.length) $chatList.text("No chats yet.");
+        chats.forEach(chat => {
+            const $item = $('<a></a>').appendTo($chatList);
+            $('<span></span>').text(chat.title).appendTo($item);
+            $('<i class="fa fa-trash"></i>').on("click", e => {
+                e.stopPropagation();
+                chats = chats.filter(c => c !== chat);
+                saveChats();
+                if (chat === currentChat) newChat(); else showChatList();
+            }).appendTo($item);
+            $item.on("click", () => { currentChat = chat; showMessages(); });
+        });
+    }
+
+    function applyFlow(msg) {
+        const tabId = flowOps.activeTabId();
+        if (!tabId) {
+            RED.notify("Open a flow tab (not a subflow) to apply changes.", "warning");
+            return;
+        }
+        msg.checkpoint = { tabId, nodes: flowOps.exportTab(tabId) };
+        flowOps.replaceTab(tabId, msg.nodes);
+        saveChats();
+        showMessages();
+        RED.notify("Flow updated. Deploy to apply it to the runtime.", "success");
+    }
+
+    function restoreCheckpoint(msg) {
+        if (!RED.nodes.workspace(msg.checkpoint.tabId)) {
+            RED.notify("The flow tab of this checkpoint no longer exists.", "error");
+            return;
+        }
+        flowOps.replaceTab(msg.checkpoint.tabId, msg.checkpoint.nodes);
+        RED.notify("Checkpoint restored.", "success");
+    }
+
+    function send() {
+        const text = $input.val().trim();
+        if (!text || busy) return;
+        if (!$model.val()) {
+            RED.notify("Add an llm-config node (e.g. via an llm chat node) and deploy it first.", "warning");
+            return;
+        }
+
+        const mode = $mode.val();
+        const tabId = $context.val() === "flow" ? flowOps.activeTabId() : null;
+
+        if (!currentChat.messages.length) {
+            currentChat.title = text.slice(0, 40);
+        }
+        currentChat.messages.push({ role: "user", content: text });
+        $input.val("");
+        busy = true;
+        $sendBtn.prop("disabled", true);
+        showMessages();
+
+        const chat = currentChat;
+        api.chat({
+            modelId: $model.val(),
+            mode,
+            flow: tabId ? flowOps.exportTab(tabId) : null,
+            nodeTypes: mode === "agent" ? RED.nodes.registry.getNodeTypes() : [],
+            messages: chat.messages
+                .filter(m => m.role === "user" || m.role === "assistant")
+                .map(m => ({ role: m.role, content: m.content }))
+        }).done(res => {
+            const reply = {
+                role: "assistant",
+                content: res.text,
+                nodes: res.nodes,
+                meta: `${res.model} / ${(res.elapsedMs / 1000).toFixed(1)}s`
+            };
+            chat.messages.push(reply);
+            if (reply.nodes && tabId) applyFlow(reply);
+        }).fail(xhr => {
+            const error = (xhr.responseJSON && xhr.responseJSON.error) || xhr.statusText || "Request failed";
+            chat.messages.push({ role: "error", content: error });
+        }).always(() => {
+            busy = false;
+            $sendBtn.prop("disabled", false);
+            saveChats();
+            if (chat === currentChat) showMessages();
+        });
+    }
+
+    function loadModels() {
+        api.models().done(models => {
+            $model.empty();
+            if (!models.length) {
+                $("<option disabled selected></option>").val("").text("No llm-config deployed").appendTo($model);
+                return;
+            }
+            models.forEach(m => $("<option></option>").val(m.id).text(m.name).appendTo($model));
+            $model.val(models.some(m => m.id === prefs.modelId) ? prefs.modelId : models[0].id);
+        });
+    }
+
+    $newBtn.on("click", newChat);
+    $chatsBtn.on("click", () => ($chatList.is(":visible") ? showMessages() : showChatList()));
+    $sendBtn.on("click", send);
+    $input.on("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); } });
+    $context.add($mode).add($model).on("change", savePrefs);
+
+    RED.events.on("runtime-state", loadModels);
+    RED.events.on("deploy", loadModels);
+
+    RED.sidebar.addTab({
+        id: "llm-plugin",
+        label: "LLM Plugin",
+        name: "LLM Plugin",
+        iconClass: "fa fa-comments",
+        content: $root,
+        enableOnEdit: true
+    });
+
+    if (chats.length) { currentChat = chats[0]; showMessages(); } else { newChat(); }
+    loadModels();
+})();
+</script>

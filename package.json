@@ -1,0 +1,35 @@
+{
+    "name": "@dae/node-red-llm",
+    "version": "0.1.0",
+    "description": "Node-RED nodes and editor sidebar for OpenAI-compatible LLMs (chat node + flow-building assistant)",
+    "license": "UNLICENSED",
+    "keywords": [
+        "node-red",
+        "llm",
+        "openai",
+        "chat",
+        "assistant"
+    ],
+    "files": [
+        "lib/",
+        "*.js",
+        "*.html",
+        "README.md"
+    ],
+    "engines": {
+        "node": ">=20"
+    },
+    "node-red": {
+        "version": ">=5.0.0",
+        "nodes": {
+            "llm-config": "llm-config.js",
+            "llm-chat": "llm-chat.js"
+        }
+    },
+    "publishConfig": {
+        "registry": "https://nexus.dtx-colab.com/repository/dae-node/"
+    },
+    "dependencies": {
+        "@dae/node-red-llm": "^0.1.0"
+    }
+}

@@ -1,0 +1,76 @@
+<script type="text/javascript">
+    RED.nodes.registerType("llm-chat", {
+        category: "function",
+        color: "#C7E9C0",
+        defaults: {
+            name: { value: "" },
+            server: { value: "", type: "llm-config", required: true },
+            systemPrompt: { value: "" },
+            temperature: { value: "0.7" },
+            maxTokens: { value: "" },
+            jsonMode: { value: false },
+            stripThinking: { value: true }
+        },
+        inputs: 1,
+        outputs: 1,
+        icon: "font-awesome/fa-comments",
+        label: function () {
+            return this.name || "llm chat";
+        }
+    });
+</script>
+
+<script type="text/html" data-template-name="llm-chat">
+    <div class="form-row">
+        <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
+        <input type="text" id="node-input-name">
+    </div>
+    <div class="form-row">
+        <label for="node-input-server"><i class="fa fa-server"></i> Model</label>
+        <input type="text" id="node-input-server">
+    </div>
+    <div class="form-row">
+        <label for="node-input-systemPrompt"><i class="fa fa-comment"></i> System</label>
+        <textarea id="node-input-systemPrompt" rows="5" style="width:70%"></textarea>
+    </div>
+    <div class="form-row">
+        <label for="node-input-temperature"><i class="fa fa-thermometer-half"></i> Temperature</label>
+        <input type="text" id="node-input-temperature" placeholder="empty = server default">
+    </div>
+    <div class="form-row">
+        <label for="node-input-maxTokens"><i class="fa fa-sort-numeric-asc"></i> Max tokens</label>
+        <input type="text" id="node-input-maxTokens" placeholder="empty = server default (max 16000)">
+    </div>
+    <div class="form-row">
+        <label>&nbsp;</label>
+        <input type="checkbox" id="node-input-jsonMode" style="width:auto">
+        <label for="node-input-jsonMode" style="width:auto">JSON mode (parse response)</label>
+    </div>
+    <div class="form-row">
+        <label>&nbsp;</label>
+        <input type="checkbox" id="node-input-stripThinking" style="width:auto">
+        <label for="node-input-stripThinking" style="width:auto">Strip &lt;think&gt; blocks</label>
+    </div>
+</script>
+
+<script type="text/html" data-help-name="llm-chat">
+    <p>Sends a chat completion request to an OpenAI-compatible LLM.</p>
+    <h3>Inputs</h3>
+    <dl class="message-properties">
+        <dt>payload <span class="property-type">string | array</span></dt>
+        <dd>User prompt, or a full array of chat messages (<code>{role, content}</code>; content may include image parts for vision).</dd>
+        <dt class="optional">system <span class="property-type">string</span></dt>
+        <dd>Overrides the configured system prompt (ignored when payload is an array).</dd>
+        <dt class="optional">llmParams <span class="property-type">object</span></dt>
+        <dd>Extra request fields merged into the body, e.g. <code>tools</code>, <code>top_p</code>.</dd>
+    </dl>
+    <h3>Outputs</h3>
+    <dl class="message-properties">
+        <dt>payload <span class="property-type">string | object</span></dt>
+        <dd>Assistant reply (parsed object in JSON mode).</dd>
+        <dt>llm <span class="property-type">object</span></dt>
+        <dd>Raw completion response, including <code>usage</code>.</dd>
+        <dt class="optional">toolCalls <span class="property-type">array</span></dt>
+        <dd>Tool calls requested by the model, if any.</dd>
+    </dl>
+</script>
