@@ -50,6 +50,8 @@ Options: system prompt, temperature, max tokens, JSON mode and removal of `<thin
 
 An **LLM Plugin** tab in the editor sidebar to chat with the model about the open flow.
 
+![LLM Plugin sidebar in Agent mode](docs/llm-plugin-sidebar.png)
+
 - **Model**: any deployed `llm-config` node.
 - **Context**: send the current flow tab (without credentials) or nothing.
 - **Mode**:
