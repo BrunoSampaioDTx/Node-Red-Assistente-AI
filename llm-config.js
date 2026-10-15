@@ -1,22 +1,25 @@
 "use strict";
 
-const { LlmClient } = require("./lib/llm-client");
+const { LlmClient, envSettings } = require("./lib/llm-client");
 const { buildSystemPrompt, parseReply } = require("./lib/assistant");
+
+const ENV_MODEL_ID = "env";
 
 module.exports = function llmConfig(RED) {
     function LlmConfigNode(config) {
         RED.nodes.createNode(this, config);
         this.name = config.name;
-        this.model = config.model;
 
-        const apiKey = this.credentials?.apiKey;
-
-        this.createClient = () => new LlmClient({
-            url: config.url,
-            model: config.model,
-            apiKey,
-            timeoutMs: Number(config.timeout) || 120000
-        });
+        // Empty fields fall back to the LLM_URL / LLM_MODEL / LLM_API_KEY env vars.
+        this.createClient = () => {
+            const env = envSettings();
+            return new LlmClient({
+                url: config.url || env.url,
+                model: config.model || env.model,
+                apiKey: this.credentials?.apiKey || env.apiKey,
+                timeoutMs: Number(config.timeout) || 120000
+            });
+        };
     }
 
     RED.nodes.registerType("llm-config", LlmConfigNode, {
@@ -26,6 +29,7 @@ module.exports = function llmConfig(RED) {
     // ---- Editor sidebar assistant API ---------------------------------------
 
     function resolveClient(modelId) {
+        if (modelId === ENV_MODEL_ID) return new LlmClient(envSettings());
         const node = modelId && RED.nodes.getNode(modelId);
         if (!node?.createClient) {
             throw new Error("Selected model is not deployed. Deploy the llm-config node first.");
@@ -35,8 +39,10 @@ module.exports = function llmConfig(RED) {
 
     RED.httpAdmin.get("/llm-plugin/models", RED.auth.needsPermission("flows.read"), (req, res) => {
         const models = [];
+        const env = envSettings();
+        if (env.url && env.model) models.push({ id: ENV_MODEL_ID, name: `${env.model} (env)` });
         RED.nodes.eachNode(n => {
-            if (n.type === "llm-config") models.push({ id: n.id, name: n.name || n.model });
+            if (n.type === "llm-config") models.push({ id: n.id, name: n.name || n.model || `${env.model} (env)` });
         });
         res.json(models);
     });

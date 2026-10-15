@@ -2,16 +2,16 @@
     RED.nodes.registerType("llm-config", {
         category: "config",
         defaults: {
-            name: { value: "GLM-5.3-Flash" },
-            url: { value: "https://glm53-flash.dtx-colab.com/v1/chat/completions", required: true },
-            model: { value: "zai-org/GLM-5.3-Flash", required: true },
+            name: { value: "" },
+            url: { value: "" },
+            model: { value: "" },
             timeout: { value: 120000, validate: RED.validators.number() }
         },
         credentials: {
             apiKey: { type: "password" }
         },
         label: function () {
-            return this.name || this.model;
+            return this.name || this.model || "llm (env)";
         }
     });
 </script>
@@ -23,15 +23,15 @@
     </div>
     <div class="form-row">
         <label for="node-config-input-url"><i class="fa fa-globe"></i> URL</label>
-        <input type="text" id="node-config-input-url" placeholder="https://host/v1/chat/completions">
+        <input type="text" id="node-config-input-url" placeholder="empty = LLM_URL env var">
     </div>
     <div class="form-row">
         <label for="node-config-input-model"><i class="fa fa-cube"></i> Model</label>
-        <input type="text" id="node-config-input-model">
+        <input type="text" id="node-config-input-model" placeholder="empty = LLM_MODEL env var">
     </div>
     <div class="form-row">
         <label for="node-config-input-apiKey"><i class="fa fa-key"></i> API key</label>
-        <input type="password" id="node-config-input-apiKey" placeholder="Bearer token">
+        <input type="password" id="node-config-input-apiKey" placeholder="empty = LLM_API_KEY env var">
     </div>
     <div class="form-row">
         <label for="node-config-input-timeout"><i class="fa fa-clock-o"></i> Timeout (ms)</label>
@@ -42,6 +42,7 @@
 <script type="text/html" data-help-name="llm-config">
     <p>Connection to an OpenAI-compatible <code>/chat/completions</code> endpoint.</p>
     <p>The API key is stored encrypted with the other Node-RED credentials.</p>
+    <p>Empty fields fall back to the <code>LLM_URL</code>, <code>LLM_MODEL</code> and <code>LLM_API_KEY</code> environment variables.</p>
     <p>Deployed configurations are also listed as models in the <b>LLM Plugin</b> sidebar.</p>
 </script>
 
@@ -264,7 +265,7 @@
         const text = $input.val().trim();
         if (!text || busy) return;
         if (!$model.val()) {
-            RED.notify("Add an llm-config node (e.g. via an llm chat node) and deploy it first.", "warning");
+            RED.notify("Set the LLM_URL / LLM_MODEL env vars or deploy an llm-config node first.", "warning");
             return;
         }
 
@@ -313,7 +314,7 @@
         api.models().done(models => {
             $model.empty();
             if (!models.length) {
-                $("<option disabled selected></option>").val("").text("No llm-config deployed").appendTo($model);
+                $("<option disabled selected></option>").val("").text("No model configured").appendTo($model);
                 return;
             }
             models.forEach(m => $("<option></option>").val(m.id).text(m.name).appendTo($model));

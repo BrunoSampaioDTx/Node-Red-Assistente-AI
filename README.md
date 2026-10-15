@@ -1,7 +1,7 @@
 # @dae/node-red-llm
 
 Node-RED nodes and an editor sidebar for any OpenAI-compatible `/chat/completions` endpoint
-(e.g. GLM-5.3-Flash, Qwen3.8).
+(vLLM, LiteLLM, Ollama, OpenAI, ...).
 
 ## Install
 
@@ -15,18 +15,31 @@ npm install @dae/node-red-llm
 
 Then restart Node-RED.
 
+## Configuration
+
+Settings come from the `llm-config` node; any empty field falls back to an environment variable
+of the Node-RED process. No URL, model or key is bundled with the package.
+
+| Variable      | Used for                                                    |
+|---------------|-------------------------------------------------------------|
+| `LLM_URL`     | Chat completions URL, e.g. `https://host/v1/chat/completions` |
+| `LLM_MODEL`   | Model id sent in the request                                |
+| `LLM_API_KEY` | Bearer token                                                |
+
+With `LLM_URL` and `LLM_MODEL` set, the sidebar also offers a "<model> (env)" entry that needs
+no `llm-config` node.
+
 ## Nodes
 
 ### llm-config (configuration)
 
 | Field   | Description                                                        |
 |---------|--------------------------------------------------------------------|
-| URL     | Full chat completions URL, e.g. `https://host/v1/chat/completions` |
-| Model   | Model id sent in the request, e.g. `zai-org/GLM-5.3-Flash`         |
-| API key | Bearer token, stored encrypted with the Node-RED credentials       |
+| URL     | Full chat completions URL (empty = `LLM_URL`)                      |
+| Model   | Model id sent in the request (empty = `LLM_MODEL`)                 |
+| API key | Bearer token, stored encrypted (empty = `LLM_API_KEY`)             |
 | Timeout | Request timeout in ms (default 120000)                             |
 
-No environment variables are read; everything is configured on this node.
 
 ### llm-chat
 
@@ -52,7 +65,7 @@ An **LLM Plugin** tab in the editor sidebar to chat with the model about the ope
 
 ![LLM Plugin sidebar in Agent mode](docs/llm-plugin-sidebar.png)
 
-- **Model**: any deployed `llm-config` node.
+- **Model**: the env vars entry and any deployed `llm-config` node.
 - **Context**: send the current flow tab (without credentials) or nothing.
 - **Mode**:
   - *Ask* answers questions.
